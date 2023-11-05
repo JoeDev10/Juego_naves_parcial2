@@ -1,0 +1,416 @@
+import pygame
+import random
+
+# Inicialización de Pygame
+pygame.init()
+
+# permite la reproducción de sonidos
+pygame.mixer.init()
+
+# Dimensiones de la pantalla
+WIDTH, HEIGHT = 800, 600 #ancho, alto
+screen = pygame.display.set_mode((WIDTH, HEIGHT)) #pantalla
+pygame.display.set_caption("Shooter") #titulo
+
+explosion_anim = []
+for i in range(9):
+    file = "regularExplosion0{}.png".format(i) #cambia la imagen
+    img = pygame.image.load(file).convert() #convierte la imagen
+    img.set_colorkey((0, 0, 0)) #elimina el fondo
+    img_scale = pygame.transform.scale(img, (75, 75)) #redimensiona
+    explosion_anim.append(img_scale) #agrega la imagen
+
+imagen = pygame.image.load("galaxia.jpg")
+imagen = pygame.transform.scale(imagen,(WIDTH, HEIGHT))
+
+# Colores
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+
+level = 1
+asteroides_destruidos = 0
+asteroides_por_level = 20
+
+# Reloj para controlar la velocidad del juego
+clock = pygame.time.Clock()
+
+def draw_text(surface, text, size, x, y):
+    """
+    Dibuja texto en una superficie dada utilizando los parámetros proporcionados.
+
+    Parámetros:
+        surface (pygame.Surface): La superficie en la que se dibujará el texto.
+        text (str): El texto a dibujar.
+        size (int): El tamaño de la fuente.
+        x (int): La coordenada x de la esquina superior izquierda del texto.
+        y (int): La coordenada y de la esquina superior izquierda del texto.
+
+    Retorna:
+        None
+    """
+    font = pygame.font.SysFont("serif", size)
+    text_surface = font.render(text, True, WHITE)
+    text_rect = text_surface.get_rect()
+    text_rect.midtop = (x, y)
+    surface.blit(text_surface, text_rect)
+    
+def draw_shield_bar(surface, x, y, porcentaje):
+    """
+    Dibuja una barra de escudo en la superficie especificada en las coordenadas proporcionadas.
+    
+    Parámetros:
+        surface (pygame.Surface): La superficie en la que se dibujará la barra de escudo.
+        x (int): La coordenada x de la esquina superior izquierda de la barra de escudo.
+        y (int): La coordenada y de la esquina superior izquierda de la barra de escudo.
+        porcentaje (float): El porcentaje de la barra de escudo que se debe llenar, que va de 0.0 a 1.0.
+    
+    Retorna:
+        None
+    """
+    BAR_LENGHT = 100
+    BAR_HEIGHT = 10
+    fill = (porcentaje / 100) * BAR_LENGHT
+    border = pygame.Rect(x, y, BAR_LENGHT, BAR_HEIGHT)
+    fill = pygame.Rect(x, y, fill, BAR_HEIGHT)
+    pygame.draw.rect(surface, GREEN, fill)
+    pygame.draw.rect(surface, WHITE, border, 2)
+
+# Clase de la nave
+class Player(pygame.sprite.Sprite):
+    """
+    Inicializa una nueva instancia de la clase.
+
+    Este método se llama cuando se crea un nuevo objeto de la clase. Establece el estado inicial del objeto.
+
+    Parámetros:
+        Ninguno
+
+    Retorna:
+        Nada
+    """
+    def __init__(self):
+        super().__init__()
+
+        # Cargar la imagen de la nave desde un archivo
+        self.image = pygame.image.load("nave_star.png")
+        self.rect = self.image.get_rect()
+        self.rect.centerx = WIDTH // 2
+        self.rect.bottom = HEIGHT - 10
+        self.shield = 100 # Cantidad de escudo
+
+
+    def update(self):
+        """
+        Actualiza la posición de la nave en función de la entrada del usuario.
+
+        Esta función se encarga de mover la nave utilizando las teclas de flecha. Comprueba el estado de las teclas de flecha y actualiza la posición de la nave en consecuencia. La posición de la nave se actualiza cambiando la coordenada x del rectángulo de la nave.
+
+        Parámetros:
+        Ninguno
+
+        Retorna:
+        Ninguno
+        """
+        # Mover la nave con las teclas de flecha
+        keys = pygame.key.get_pressed() # Obtener el estado de las teclas
+        if keys[pygame.K_LEFT]:
+            self.rect.x -= 5
+        if keys[pygame.K_RIGHT]:
+            self.rect.x += 5
+            
+        #evitamos que la nave salga de la pantalla
+        if self.rect.right > WIDTH:
+            self.rect.right = WIDTH
+        if self.rect.left < 0:
+            self.rect.left = 0
+            
+
+# Clase de asteroides
+# Define una lista de posibles tamaños de asteroides (ancho, alto)
+asteroid_sizes = [(30, 30), (40, 40), (50, 50)]
+
+class Asteroid(pygame.sprite.Sprite):
+    """
+    Inicializa una nueva instancia de la clase Asteroid.
+
+    Este método es el constructor de la clase Asteroid. Se llama cuando se crea una nueva instancia de la clase.
+
+    Parámetros:
+    - Ninguno
+
+    Retorna:
+    - Ninguno
+    """
+    def __init__(self):
+        super().__init__()
+
+        # Elige aleatoriamente un tamaño de asteroide de la lista de tamaños
+        size = random.choice(asteroid_sizes)
+
+        # Carga la imagen del asteroide según el tamaño elegido
+        if size == (30, 30):
+            self.image = pygame.image.load("asteroid_small.png")
+        elif size == (40, 40):
+            self.image = pygame.image.load("asteroid_medium.png")
+        elif size == (50, 50):
+            self.image = pygame.image.load("asteroid_big.png")
+
+        self.rect = self.image.get_rect()
+        self.speedy = random.randrange(1, 10) # velocidad aleatoria de los asteroides
+        self.speedx = random.randrange(-5, 5)
+        
+
+
+    def update(self):
+        """
+        Actualiza la posición del asteroide.
+
+        Esta función se encarga de mover el asteroide hacia abajo en la pantalla.
+        Actualiza la coordenada y del rectángulo del asteroide sumando el valor de speedy.
+        Si el asteroide desaparece de la pantalla, se posiciona de forma aleatoria en la pantalla nuevamente.
+
+        Parámetros:
+            self (Asteroid): El objeto asteroide.
+
+        Retorna:
+            None
+        """
+        # Hacer que los asteroides caigan hacia abajo
+        self.rect.y += self.speedy
+        self.rect.x += self.speedx
+        if self.rect.top > HEIGHT:  # Si el asteroide desaparece de la pantalla, se posiciona de forma aleatoria en la pantalla nuevamente      
+            self.rect.x = random.randrange(0, WIDTH - self.rect.width + 1) # posicion aleatoria de los asteroides
+            self.rect.y = random.randrange(-30, -10) # velocidad aleatoria de los asteroides
+            
+            
+#clase de proyectiles
+class Proyectil(pygame.sprite.Sprite):
+    """
+    Inicializa una nueva instancia de la clase.
+
+    Parámetros:
+        x (int): La coordenada x del centro de la imagen.
+        y (int): La coordenada y del centro de la imagen.
+
+    Retorna:
+        None
+    """
+    def __init__(self, x, y):
+        super().__init__()
+        
+        self.image = pygame.image.load("proyectil.png")
+        self.rect = self.image.get_rect() # posicion aleatoria de los proyectiles
+        self.rect.centerx = x # posicion aleatoria de los proyectiles
+        self.rect.centery = y # posicion aleatoria de los proyectiles
+        self.speedy = -10 # velocidad aleatoria de los proyectiles
+    
+    def update(self):
+        """
+        Actualiza la posición del proyectil.
+
+        Esta función mueve el proyectil hacia arriba en la cantidad especificada por `self.speedy`.
+        Si el proyectil sale por debajo de la pantalla, se elimina del juego.
+
+        Parámetros:
+        - Ninguno
+
+        Retorna:
+        - Ninguno
+        """
+        #mover el proyectil hacia arriba
+        self.rect.y += self.speedy # velocidad aleatoria de los proyectiles
+        if self.rect.bottom < 0: # Si el proyectil sale por debajo de la pantalla, se elimina
+            self.kill() # elimina el proyectil
+            
+class Explosion(pygame.sprite.Sprite):
+    """
+    Inicializa una nueva instancia de la clase Explosion.
+
+    Parámetros:
+        center (tuple): Las coordenadas centrales de la explosión.
+
+    Retorna:
+        None
+    """
+    def __init__(self, center):
+        super().__init__()
+        self.image = explosion_anim[0] # imagen inicial de la animación
+        self.rect = self.image.get_rect() # obtener el rectángulo de la imagen
+        self.rect.center = center # centrar la imagen
+        self.frame = 0 # marco de la animación
+        self.last_update = pygame.time.get_ticks() # tiempo de la animación
+        self.frame_rate = 50  # Velocidad de la animación (en milisegundos)
+    
+    def update(self):
+        """
+        Actualiza la animación de explosión.
+    
+        Esta función se encarga de actualizar la animación de explosión de un objeto. Verifica el tiempo actual y lo compara con el tiempo de la última actualización para determinar si ha pasado suficiente tiempo para la siguiente imagen de la animación. Si ha pasado suficiente tiempo, el marco se incrementa y la imagen del objeto se actualiza a la imagen correspondiente del marco de la animación. Si el marco llega al final de la animación, el objeto se elimina.
+    
+        Parámetros:
+        - self: El objeto en sí mismo.
+    
+        Retorno:
+        - Ninguno
+        """
+        now = pygame.time.get_ticks()
+        if now - self.last_update > self.frame_rate:
+            self.last_update = now
+            self.frame += 1
+            if self.frame == len(explosion_anim):
+                self.kill()
+            else:
+                center = self.rect.center
+                self.image = explosion_anim[self.frame]
+                self.rect = self.image.get_rect()
+                self.rect.center = center
+                
+def show_go_screen():
+    """
+    Muestra la pantalla de inicio en el juego.
+
+    Esta función se encarga de mostrar la pantalla de inicio en el juego. Blita la imagen `imagen` en la pantalla `screen`,
+    dibuja el texto "SHOOTER" con tamaño de fuente 65 en el centro de la pantalla, dibuja el texto "instrucciones van aca"
+    con tamaño de fuente 27 en el centro de la pantalla, dibuja el texto "press key" con tamaño de fuente 20 en el centro de la pantalla,
+    y actualiza la pantalla para que los cambios sean visibles.
+
+    Luego, entra en un bucle donde espera a que se suelte una tecla. Si la tecla es el evento QUIT, sale del juego.
+    Si la tecla es cualquier otra tecla, sale del bucle y continúa con el juego.
+
+    Parámetros:
+        Ninguno
+
+    Retorna:
+        Nada
+    """
+    screen.blit(imagen, (0, 0))
+    draw_text(screen, "SHOOTER", 65, WIDTH // 2, HEIGHT // 4)
+    draw_text(screen, "instrucciones van aca", 27, WIDTH // 2, HEIGHT // 2)
+    draw_text(screen, "press key", 20, WIDTH // 2, HEIGHT * 3/4)
+    pygame.display.flip()
+    waiting = True
+    while waiting:
+        clock.tick(60)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+            if event.type == pygame.KEYUP:
+                waiting = False
+        
+#Sonidos
+sonido_laser = pygame.mixer.Sound("laser.ogg") #sonido de laser
+
+explosion_sound = pygame.mixer.Sound("assets_explosion (1).wav") #sonido de explosion
+explosion_sound.set_volume(0.4) #volumen de explosion
+
+pygame.mixer.music.load("star-wars-style-march.mp3") #musica de fondo
+pygame.mixer.music.set_volume(0.3) #volumen de la musica
+
+#Game Over
+game_over = True
+
+pygame.mixer.music.play(loops = -1) # Reproducir el sonido
+
+# Bucle principal del juego
+running = True
+while running:
+    if game_over:
+        show_go_screen()
+        
+        game_over = False
+        # Crear grupos de sprites
+        all_sprites = pygame.sprite.Group()
+        asteroids = pygame.sprite.Group()
+        proyectiles = pygame.sprite.Group()
+
+        # Crear una nave
+        player = Player()
+        all_sprites.add(player)
+
+        # Generar asteroides
+        for _ in range(8):
+            asteroid = Asteroid()
+            all_sprites.add(asteroid)
+            asteroids.add(asteroid)
+            
+        score = 0
+        
+    screen.blit(imagen, (0, 0))
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        
+        # Detectar cuando se presiona la tecla de disparo (espacio)
+        elif event.type == pygame.KEYDOWN:
+            if  event.key == pygame.K_SPACE:
+                proyectil = Proyectil(player.rect.centerx, player.rect.y)
+                all_sprites.add(proyectil)
+                proyectiles.add(proyectil)
+                
+                sonido_laser.play()
+    
+    # Actualizar
+    all_sprites.update()
+    
+    hits = pygame.sprite.groupcollide(asteroids, proyectiles, True, True)
+    for hit in hits:
+        score += 10
+        explosion_sound.play() #sonido de explosion
+        explosion = Explosion(hit.rect.center)
+        all_sprites.add(explosion) #agregar explosion a la lista de sprites
+        asteroid = Asteroid() #crear nuevo asteroide
+        all_sprites.add(asteroid) #agregar nuevo asteroide a la lista de sprites
+        asteroids.add(asteroid) #agregar nuevo asteroide a la lista de asteroides
+
+    # Comprobar colisiones entre la nave y los asteroides
+    hits = pygame.sprite.spritecollide(player, asteroids, False)
+    for hit in hits:
+        player.shield -= 25
+        asteroid = Asteroid()
+        all_sprites.add(asteroid)
+        asteroids.add(asteroid)
+        if player.shield <= 0:
+            game_over = True
+        
+    #verificar si se ha alcanzado el proximo nivel
+    if hits:
+        #incrementar el contador de asteroides destruidos
+        asteroides_destruidos += len(hits)
+        
+        if asteroides_destruidos >= asteroides_por_level:
+            level += 1
+            asteroides_destruidos = 0
+
+    hits = pygame.sprite.spritecollide(player, asteroids, True)
+    
+    # Renderizar
+    all_sprites.draw(screen)
+    
+    # Renderizar texto "Score:" 
+    font = pygame.font.Font(None, 36)
+    text = font.render("Score: ", True, (255, 255, 255))
+
+    # Obtener ancho del texto
+    text_width = text.get_width()
+
+    # Renderizar puntaje  
+    score_text = font.render(str(score), True, (255,255,255))
+    
+    width = 500 # ancho de la pantalla
+    mid_x = width / 2 # coordenada x del centro de la pantalla
+
+    text_x = mid_x - (text_width / 2) # centrar el texto
+
+    screen.blit(text, (text_x, 10))
+    screen.blit(score_text, (text_x + text_width, 10))
+    
+    #escudo
+    draw_shield_bar(screen, 5, 5, player.shield)
+
+    pygame.display.flip()
+
+    clock.tick(60)
+    
+pygame.quit()
